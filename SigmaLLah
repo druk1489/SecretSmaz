@@ -1,9 +1,3 @@
--- ============================================================
---   Lord Hub Build Manager + OBJ Loader (2026 edition)
---   Save & Load Builds | OBJ из LordHub/*.obj
---   OBJ Loader: WedgePart triangulation (Warframe-style)
--- ============================================================
-
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService       = game:GetService("HttpService")
