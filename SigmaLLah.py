@@ -1,4 +1,4 @@
-import os
+import os, threading, time
 from flask import Flask, request, jsonify
 from PIL import Image
 import requests
@@ -9,7 +9,6 @@ app = Flask(__name__)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.google.com/",
 }
 
@@ -30,12 +29,7 @@ def pixels():
     try:
         resp = requests.get(url, timeout=15, headers=HEADERS, allow_redirects=True)
         resp.raise_for_status()
-        content_type = resp.headers.get("Content-Type", "")
-        if "html" in content_type:
-            return jsonify({"error": f"Got HTML instead of image. Site may block hotlinking. Content-Type: {content_type}"}), 500
         img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-    except requests.exceptions.HTTPError as e:
-        return jsonify({"error": f"HTTP {e.response.status_code}: {str(e)}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -51,9 +45,26 @@ def pixels():
 
     return jsonify({"w": w, "h": h, "pixels": pixels_out})
 
+@app.route("/ping")
+def ping():
+    return "pong"
+
 @app.route("/")
 def index():
     return "<h2>LordHub Image Proxy OK</h2><p>/px?url=URL&w=32</p>"
+
+# Пингуем себя каждые 14 минут чтобы не засыпать
+def keep_alive():
+    time.sleep(30)  # ждём пока сервер стартует
+    own_url = os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:5000")
+    while True:
+        try:
+            requests.get(f"{own_url}/ping", timeout=5)
+        except:
+            pass
+        time.sleep(14 * 60)
+
+threading.Thread(target=keep_alive, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
