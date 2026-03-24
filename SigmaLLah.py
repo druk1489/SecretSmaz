@@ -104,19 +104,25 @@ def render():
 # Принимает JSON: {w, h, scale, pixels, webhook, reason, player, position}
 @app.route("/renderwh", methods=["POST"])
 def renderwh():
+    import traceback, json as json_mod
     try:
-        data       = request.get_json(force=True)
-        width      = int(data.get("w", 40))
-        height     = int(data.get("h", 22))
-        scale      = int(data.get("scale", 8))
-        pixels     = data.get("pixels", [])
-        webhook    = data.get("webhook", "")
-        reason     = data.get("reason", "scan")
-        player     = data.get("player", "Unknown")
-        position   = data.get("position", "0, 0, 0")
+        data     = request.get_json(force=True)
+        if not data:
+            return jsonify({"ok": False, "error": "no json body"}), 400
+
+        width    = int(data.get("w", 40))
+        height   = int(data.get("h", 22))
+        scale    = int(data.get("scale", 8))
+        pixels   = data.get("pixels", [])
+        webhook  = data.get("webhook", "")
+        reason   = data.get("reason", "scan")
+        player   = data.get("player", "Unknown")
+        position = data.get("position", "0, 0, 0")
+
+        print(f"[renderwh] w={width} h={height} scale={scale} px={len(pixels)} webhook={'yes' if webhook else 'NO'}")
 
         if not webhook:
-            return jsonify({"ok": False, "error": "no webhook"}), 400
+            return jsonify({"ok": False, "error": "no webhook url"}), 400
 
         width  = max(1, min(width,  200))
         height = max(1, min(height, 200))
@@ -124,6 +130,8 @@ def renderwh():
 
         img_w = width  * scale
         img_h = height * scale
+
+        print(f"[renderwh] image size: {img_w}x{img_h}")
 
         img = Image.new("RGB", (img_w, img_h), (8, 8, 16))
 
@@ -133,27 +141,27 @@ def renderwh():
             r  = max(0, min(255, int(float(px.get("r", 0)) * 255)))
             g  = max(0, min(255, int(float(px.get("g", 0)) * 255)))
             b  = max(0, min(255, int(float(px.get("b", 0)) * 255)))
-            block = Image.new("RGB", (scale, scale), (r, g, b))
-            img.paste(block, (xi*scale, yi*scale, xi*scale+scale, yi*scale+scale))
+            if 0 <= xi < width and 0 <= yi < height:
+                block = Image.new("RGB", (scale, scale), (r, g, b))
+                img.paste(block, (xi*scale, yi*scale))
 
-        # Сохраняем в буфер
         buf = io.BytesIO()
         img.save(buf, format="PNG", optimize=True)
         buf.seek(0)
         png_bytes = buf.getvalue()
 
-        # Отправляем в Discord как файл + embed
-        import json as json_mod
+        print(f"[renderwh] png size: {len(png_bytes)} bytes, sending to discord...")
+
         payload = {
             "embeds": [{
-                "title":       "📷 Lord Hub Ray Scan",
-                "color":       0x64A0FF,
-                "image":       {"url": "attachment://scan.png"},
+                "title": "📷 Lord Hub Ray Scan",
+                "color": 0x64A0FF,
+                "image": {"url": "attachment://scan.png"},
                 "fields": [
-                    {"name": "Reason",   "value": reason,   "inline": True},
-                    {"name": "Player",   "value": player,   "inline": True},
-                    {"name": "Position", "value": position, "inline": True},
-                    {"name": "Size",     "value": f"{width}x{height} ({img_w}x{img_h}px)", "inline": True},
+                    {"name": "Reason",   "value": str(reason),   "inline": True},
+                    {"name": "Player",   "value": str(player),   "inline": True},
+                    {"name": "Position", "value": str(position), "inline": True},
+                    {"name": "Size",     "value": f"{width}x{height}", "inline": True},
                 ],
                 "footer": {"text": "Lord Hub Scanner"},
             }]
@@ -162,19 +170,23 @@ def renderwh():
         resp = requests.post(
             webhook,
             files={
-                "file":    ("scan.png", png_bytes, "image/png"),
+                "file": ("scan.png", png_bytes, "image/png"),
                 "payload_json": (None, json_mod.dumps(payload), "application/json"),
             },
             timeout=15,
         )
 
+        print(f"[renderwh] discord response: {resp.status_code} {resp.text[:200]}")
+
         if resp.status_code in (200, 204):
             return jsonify({"ok": True})
         else:
-            return jsonify({"ok": False, "error": resp.text}), 500
+            return jsonify({"ok": False, "error": f"discord: {resp.status_code} {resp.text[:200]}"}), 500
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        tb = traceback.format_exc()
+        print(f"[renderwh] EXCEPTION: {tb}")
+        return jsonify({"ok": False, "error": str(e), "traceback": tb}), 500
 
 # ── Прочее ────────────────────────────────────────────────────
 @app.route("/ping")
