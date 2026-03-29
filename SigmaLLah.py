@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from PIL import Image
 import requests
 import io
+import qrcode
 
 app = Flask(__name__)
 
@@ -17,7 +18,7 @@ def add_cors(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
-# ── Images tab (старый роут) ──────────────────────────────────
+# ── Images tab ────────────────────────────────────────────────
 @app.route("/px")
 def pixels():
     url = request.args.get("url", "").strip()
@@ -83,6 +84,46 @@ def render():
         print(f"[render] ERROR: {traceback.format_exc()}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# ── QR Code ───────────────────────────────────────────────────
+@app.route("/qr")
+def qr_code():
+    import traceback
+    try:
+        text = request.args.get("text", "").strip()
+        if not text:
+            return jsonify({"ok": False, "error": "text param missing"}), 400
+
+        print(f"[qr] generating for: {text[:80]}")
+
+        # генерируем QR
+        qr = qrcode.QRCode(
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=1,
+            border=0,
+        )
+        qr.add_data(text)
+        qr.make(fit=True)
+
+        # получаем матрицу (список списков True/False)
+        modules = qr.modules  # list of list of bool
+        size = len(modules)
+
+        # конвертируем в 0/1
+        matrix = []
+        for row in modules:
+            matrix.append([1 if cell else 0 for cell in row])
+
+        print(f"[qr] ok size={size}x{size}")
+        return jsonify({
+            "ok": True,
+            "size": size,
+            "matrix": matrix,
+        })
+
+    except Exception as e:
+        print(f"[qr] ERROR: {traceback.format_exc()}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # ── Прочее ───────────────────────────────────────────────────
 @app.route("/ping")
 def ping():
@@ -92,8 +133,9 @@ def ping():
 def index():
     return """
     <h2>LordHub Proxy OK</h2>
-    <p>GET  /px?url=URL&w=32 — пиксели для Images tab</p>
-    <p>POST /render — рейскан PNG</p>
+    <p>GET  /px?url=URL&w=32       — пиксели для Images tab</p>
+    <p>POST /render                 — рейскан PNG</p>
+    <p>GET  /qr?text=TEXT           — QR матрица</p>
     """
 
 def keep_alive():
