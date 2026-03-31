@@ -3,4 +3,3 @@ pillow
 requests
 gunicorn
 qrcode[pil]
-numpy
